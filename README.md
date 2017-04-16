@@ -15,9 +15,11 @@ The broker does not yet support:
 - retained messages
 - TLS
 
-The complete functionality is included in the mqtt directory. The broker is started by simply calling:
+The complete functionality is included in the mqtt directory. The broker is started by simply including:
 
-mqtt_server_start(1883)
+#include "mqtt_server.h"
+
+mqtt_server_start(1883);
 
 in the user_init() function. The code can be be used in any project that is compiled using the esp-open-sdk (https://github.com/pfalcon/esp-open-sdk). Thanks to Tuan PM for sharing his MQTT client library https://github.com/tuanpmt/esp_mqtt as a basis with us.
 
