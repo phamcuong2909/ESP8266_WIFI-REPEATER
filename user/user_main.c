@@ -35,6 +35,11 @@
 #include "mqtt.h"
 #endif
 
+#ifdef MQTT_BROKER
+#include "mqtt_server.h"
+#include "mqtt_topiclist.h"
+#endif
+
 uint32_t readvdd33(void);
 uint32_t Vdd;
 
@@ -584,6 +589,17 @@ char response[128];
 }
 #endif /* ACLS */
 
+#ifdef MQTT_BROKER
+bool ICACHE_FLASH_ATTR printf_topic(topic_entry *topic, void *user_data)
+{
+  uint8_t *response = (uint8_t *)user_data;
+
+  os_sprintf(response, "Client: %s Topic: \"%s\" QoS: %d\r\n", topic->clientcon->connect_info.client_id, topic->topic, topic->qos);
+  ringbuf_memcpy_into(console_tx_buffer, response, os_strlen(response));
+  return false;
+}
+#endif
+
 static char INVALID_LOCKED[] = "Invalid command. Config locked\r\n";
 static char INVALID_NUMARGS[] = "Invalid number of arguments\r\n";
 static char INVALID_ARG[] = "Invalid argument\r\n";
@@ -618,7 +634,11 @@ void ICACHE_FLASH_ATTR console_handle_command(struct espconn *pespconn)
 #ifdef MQTT_CLIENT
 		"|mqtt"
 #else
+#ifdef MQTT_BROKER
+		"|mqtt_broker"
+#else
 		""
+#endif
 #endif
 	);
         ringbuf_memcpy_into(console_tx_buffer, response, os_strlen(response));
@@ -786,6 +806,22 @@ void ICACHE_FLASH_ATTR console_handle_command(struct espconn *pespconn)
 		config.mqtt_id, config.mqtt_prefix, config.mqtt_command_topic, config.mqtt_gpio_out_topic, config.mqtt_interval, config.mqtt_topic_mask);
 	   ringbuf_memcpy_into(console_tx_buffer, response, os_strlen(response));
 
+	   goto command_handled_2;
+      }
+#endif
+#ifdef MQTT_BROKER
+      if (nTokens == 2 && strcmp(tokens[1], "mqtt_broker") == 0) {
+	   MQTT_ClientCon *clientcon = clientcon_list;
+
+           os_sprintf(response, "Current clients:\r\n");
+	   ringbuf_memcpy_into(console_tx_buffer, response, os_strlen(response));
+	   for (clientcon = clientcon_list; clientcon != NULL; clientcon = clientcon->next) {
+	       os_sprintf(response, "%s, ", clientcon->connect_info.client_id);
+	       ringbuf_memcpy_into(console_tx_buffer, response, os_strlen(response));
+	   }
+           os_sprintf(response, "\r\nCurrent subsriptions:\r\n");
+	   ringbuf_memcpy_into(console_tx_buffer, response, os_strlen(response));
+           iterate_topics(printf_topic, response);
 	   goto command_handled_2;
       }
 #endif
@@ -1787,7 +1823,7 @@ struct ip_info info;
 
     UART_init_console(BIT_RATE_115200, 0, console_rx_buffer, console_tx_buffer);
 
-    os_printf("\r\n\r\nWiFi Repeater V1.4 starting\r\n");
+    os_printf("\r\n\r\nWiFi Router/MQTT Broker V1.5 starting\r\n");
 
     // Load config
     if (config_load(&config)== 0) {
@@ -1903,6 +1939,10 @@ struct ip_info info;
     Vdd = 3300;
 
     system_update_cpu_freq(config.clock_speed);
+
+#ifdef MQTT_BROKER
+    MQTT_server_start(1883);
+#endif
 
     // Start the timer
     os_timer_setfn(&ptimer, timer_func, 0);

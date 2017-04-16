@@ -26,13 +26,13 @@ typedef enum {SIG_DO_NOTHING=0, SIG_START_SERVER=1, SIG_SEND_DATA, SIG_UART0, SI
 //
 // Define this to support the "scan" command for AP search
 //
-#define ALLOW_SCANNING      1
+//#define ALLOW_SCANNING      1
 
 //
 // Define this to support the "sleep" command for power management and deep sleep
 // Requires a connection of GPIO16 and RST (probably not availabe on ESP01 modules)
 //
-#define ALLOW_SLEEP         1
+//#define ALLOW_SLEEP         1
 
 //
 // Define this if you want to have access to the config console via TCP.
@@ -44,12 +44,12 @@ typedef enum {SIG_DO_NOTHING=0, SIG_START_SERVER=1, SIG_SEND_DATA, SIG_UART0, SI
 //
 // Define this if you want to have ACLs for the SoftAP.
 //
-#define ACLS      1
+//#define ACLS      1
 
 //
 // Define this if you want to have QoS for the SoftAP.
 //
-#define TOKENBUCKET      1
+//#define TOKENBUCKET      1
 // Burst size (token bucket size) in seconds of average bitrate
 #define MAX_TOKEN_RATIO	 4
 
@@ -58,7 +58,7 @@ typedef enum {SIG_DO_NOTHING=0, SIG_START_SERVER=1, SIG_SEND_DATA, SIG_UART0, SI
 // Packets are mirrored in pcap format to the given port.
 // CAUTION: this might be a privacy issue!!!
 //
-#define REMOTE_MONITORING  1
+//#define REMOTE_MONITORING  1
 
 #define MONITOR_BUFFER_SIZE 0x3c00
 
@@ -71,8 +71,12 @@ typedef enum {SIG_DO_NOTHING=0, SIG_START_SERVER=1, SIG_SEND_DATA, SIG_UART0, SI
 //
 // Here the MQTT stuff
 //
+
+// Define this if you want to have it work as a MQTT broker
+#define MQTT_BROKER 	1
+
 // Define this if you want to have it work as a MQTT client
-#define MQTT_CLIENT 	1	
+//#define MQTT_CLIENT 	1	
 
 #define MQTT_BUF_SIZE   1024
 #define MQTT_KEEPALIVE    120  /*seconds*/

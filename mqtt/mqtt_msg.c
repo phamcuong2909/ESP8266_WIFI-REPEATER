@@ -38,34 +38,6 @@
 #include "mqtt_msg.h"
 #include "user_config.h"
 
-#define MQTT_MAX_FIXED_HEADER_SIZE 3
-
-enum mqtt_connect_flag
-{
-  MQTT_CONNECT_FLAG_USERNAME = 1 << 7,
-  MQTT_CONNECT_FLAG_PASSWORD = 1 << 6,
-  MQTT_CONNECT_FLAG_WILL_RETAIN = 1 << 5,
-  MQTT_CONNECT_FLAG_WILL = 1 << 2,
-  MQTT_CONNECT_FLAG_CLEAN_SESSION = 1 << 1
-};
-
-struct __attribute((__packed__)) mqtt_connect_variable_header
-{
-  uint8_t lengthMsb;
-  uint8_t lengthLsb;
-#if defined(PROTOCOL_NAMEv31)
-  uint8_t magic[6];
-#elif defined(PROTOCOL_NAMEv311)
-  uint8_t magic[4];
-#else
-#error "Please define protocol name"
-#endif
-  uint8_t version;
-  uint8_t flags;
-  uint8_t keepaliveMsb;
-  uint8_t keepaliveLsb;
-};
-
 static int ICACHE_FLASH_ATTR append_string(mqtt_connection_t* connection, const char* string, int len)
 {
   if (connection->message.length + len + 2 > connection->buffer_length)
@@ -155,6 +127,24 @@ int ICACHE_FLASH_ATTR mqtt_get_total_length(uint8_t* buffer, uint16_t length)
   totlen += i;
 
   return totlen;
+}
+
+
+char* ICACHE_FLASH_ATTR mqtt_get_str(uint8_t* buffer, uint16_t* length)
+{
+  int i = 0;
+  int topiclen;
+
+  if (i + 2 >= *length)
+    return NULL;
+  topiclen = buffer[i++] << 8;
+  topiclen |= buffer[i++];
+
+  if (i + topiclen > *length)
+    return NULL;
+
+  *length = topiclen;
+  return buffer + i;
 }
 
 const char* ICACHE_FLASH_ATTR mqtt_get_publish_topic(uint8_t* buffer, uint16_t* length)
@@ -280,6 +270,7 @@ uint16_t ICACHE_FLASH_ATTR mqtt_get_id(uint8_t* buffer, uint16_t length)
     case MQTT_MSG_TYPE_SUBACK:
     case MQTT_MSG_TYPE_UNSUBACK:
     case MQTT_MSG_TYPE_SUBSCRIBE:
+    case MQTT_MSG_TYPE_UNSUBSCRIBE:
       {
         // This requires the remaining length to be encoded in 1 byte,
         // which it should be.
@@ -380,6 +371,14 @@ mqtt_message_t* ICACHE_FLASH_ATTR mqtt_msg_connect(mqtt_connection_t* connection
   return fini_message(connection, MQTT_MSG_TYPE_CONNECT, 0, 0, 0);
 }
 
+mqtt_message_t* ICACHE_FLASH_ATTR mqtt_msg_connack(mqtt_connection_t* connection, enum mqtt_connect_return_code retcode)
+{
+  init_message(connection);
+  connection->buffer[connection->message.length++] = 0; 	// Connect Acknowledge Flags
+  connection->buffer[connection->message.length++] = retcode;	// Connect Return code
+  return fini_message(connection, MQTT_MSG_TYPE_CONNACK, 0, 0, 0);
+}
+
 mqtt_message_t* ICACHE_FLASH_ATTR mqtt_msg_publish(mqtt_connection_t* connection, const char* topic, const char* data, int data_length, int qos, int retain, uint16_t* message_id)
 {
   init_message(connection);
@@ -458,6 +457,21 @@ mqtt_message_t* ICACHE_FLASH_ATTR mqtt_msg_subscribe(mqtt_connection_t* connecti
   return fini_message(connection, MQTT_MSG_TYPE_SUBSCRIBE, 0, 1, 0);
 }
 
+mqtt_message_t* ICACHE_FLASH_ATTR mqtt_msg_suback(mqtt_connection_t* connection, uint8_t *ret_codes, uint8_t ret_codes_len, uint16_t message_id)
+{
+uint8_t i;
+
+  init_message(connection);
+
+  if ((append_message_id(connection, message_id)) == 0)
+    return fail_message(connection);
+
+  for (i = 0; i < ret_codes_len; i++)
+    connection->buffer[connection->message.length++] = ret_codes[i];
+
+  return fini_message(connection, MQTT_MSG_TYPE_SUBACK, 0, 0, 0);
+}
+
 mqtt_message_t* ICACHE_FLASH_ATTR mqtt_msg_unsubscribe(mqtt_connection_t* connection, const char* topic, uint16_t* message_id)
 {
   init_message(connection);
@@ -472,6 +486,18 @@ mqtt_message_t* ICACHE_FLASH_ATTR mqtt_msg_unsubscribe(mqtt_connection_t* connec
     return fail_message(connection);
 
   return fini_message(connection, MQTT_MSG_TYPE_UNSUBSCRIBE, 0, 1, 0);
+}
+
+mqtt_message_t* ICACHE_FLASH_ATTR mqtt_msg_unsuback(mqtt_connection_t* connection, uint16_t message_id)
+{
+uint8_t i;
+
+  init_message(connection);
+
+  if ((append_message_id(connection, message_id)) == 0)
+    return fail_message(connection);
+
+  return fini_message(connection, MQTT_MSG_TYPE_UNSUBACK, 0, 0, 0);
 }
 
 mqtt_message_t* ICACHE_FLASH_ATTR mqtt_msg_pingreq(mqtt_connection_t* connection)
