@@ -4,8 +4,7 @@ A basic MQTT Broker on the ESP8266
 The broker does support:
 - a subset of MQTT v3.1.1 (CONNECT, DISCONNECT, SUBSCRIBE, UNSUBSCRIBE, PUBLISH, PING)
 - a smaller number of clients (at least 5 have been tested) based on the config of lwip
-- up to 100 topic subscriptions
-- arbitrary publications
+- retained messages
 - LWT
 - QoS level 0
 
@@ -13,14 +12,13 @@ The broker does not yet support:
 - username, password authentication
 - QoS levels other than 0
 - non-clear sessions
-- retained messages
 - TLS
 
 The complete functionality is included in the mqtt directory. The broker is started by simply including:
 
 #include "mqtt_server.h"
 
-mqtt_server_start(1883);
+bool MQTT_server_start(uint16_t portno, uint16_t max_subscriptions, uint16_t max_retained_topics);
 
 in the user_init() function. The code can be used in any project that is compiled using the esp-open-sdk (https://github.com/pfalcon/esp-open-sdk). Thanks to Tuan PM for sharing his MQTT client library https://github.com/tuanpmt/esp_mqtt as a basis with us.
 

@@ -4,8 +4,7 @@
 #include "mqtt_server.h"
 #include "mqtt_topics.h"
 #include "mqtt_topiclist.h"
-
-#define MAX_TOPICS            100
+#include "mqtt_retainedlist.h"
 
 #ifndef QUEUE_BUFFER_SIZE
 #define QUEUE_BUFFER_SIZE     2048
@@ -38,12 +37,28 @@ bool ICACHE_FLASH_ATTR print_topic(topic_entry *topic, void* user_data)
 bool ICACHE_FLASH_ATTR publish_topic(topic_entry *topic, uint8_t *data, uint16_t data_len)
 {
 MQTT_ClientCon *clientcon = topic->clientcon;
-uint16_t message_id;
+uint16_t message_id = 0;
 
   MQTT_INFO("MQTT: Client: %s Topic: \"%s\" QoS: %d\r\n", clientcon->connect_info.client_id, topic->topic, topic->qos);
 
   clientcon->mqtt_state.outbound_message = 
        mqtt_msg_publish(&clientcon->mqtt_state.mqtt_connection, topic->topic, data, data_len, topic->qos, 0, &message_id);
+  if (QUEUE_Puts(&clientcon->msgQueue, clientcon->mqtt_state.outbound_message->data, clientcon->mqtt_state.outbound_message->length) == -1) {
+    MQTT_ERROR("MQTT: Queue full\r\n");
+    return false;
+  }
+  return true;
+}
+
+
+bool ICACHE_FLASH_ATTR publish_retainedtopic(retained_entry *entry, MQTT_ClientCon *clientcon)
+{
+uint16_t message_id = 0;
+
+  MQTT_INFO("MQTT: Client: %s Topic: \"%s\" QoS: %d\r\n", clientcon->connect_info.client_id, entry->topic, entry->qos);
+
+  clientcon->mqtt_state.outbound_message = 
+       mqtt_msg_publish(&clientcon->mqtt_state.mqtt_connection, entry->topic, entry->data, entry->data_len, entry->qos, 0, &message_id);
   if (QUEUE_Puts(&clientcon->msgQueue, clientcon->mqtt_state.outbound_message->data, clientcon->mqtt_state.outbound_message->length) == -1) {
     MQTT_ERROR("MQTT: Queue full\r\n");
     return false;
@@ -165,16 +180,16 @@ MQTT_DeleteClientCon(MQTT_ClientCon *mqttClientCon)
   if (mqttClientCon->connect_info.will_topic != NULL) {
     // Publish the LWT
     find_topic(mqttClientCon->connect_info.will_topic, publish_topic, 
-       mqttClientCon->connect_info.will_message, os_strlen(mqttClientCon->connect_info.will_message));
+       mqttClientCon->connect_info.will_data, mqttClientCon->connect_info.will_data_len);
     activate_next_client();
 
     os_free(mqttClientCon->connect_info.will_topic);
     mqttClientCon->connect_info.will_topic = NULL;
   }
 
-  if (mqttClientCon->connect_info.will_message != NULL) {
-    os_free(mqttClientCon->connect_info.will_message);
-    mqttClientCon->connect_info.will_message = NULL;
+  if (mqttClientCon->connect_info.will_data != NULL) {
+    os_free(mqttClientCon->connect_info.will_data);
+    mqttClientCon->connect_info.will_data = NULL;
   }
 
   if (mqttClientCon->msgQueue.buf != NULL) {
@@ -372,11 +387,11 @@ READPACKET:
               return;
             }
 
-            clientcon->connect_info.will_message = (char *) os_zalloc(lw_data_len+1);
-            if (clientcon->connect_info.will_message != NULL) {
-              os_memcpy(clientcon->connect_info.will_message, lw_data, lw_data_len);
-              clientcon->connect_info.will_message[lw_data_len]=0;
-              MQTT_INFO("MQTT: LWT message %s\r\n", clientcon->connect_info.will_message);
+            clientcon->connect_info.will_data = (char *) os_zalloc(lw_data_len);
+            clientcon->connect_info.will_data_len = lw_data_len;
+            if (clientcon->connect_info.will_data != NULL) {
+              os_memcpy(clientcon->connect_info.will_data, lw_data, lw_data_len);
+              MQTT_INFO("MQTT: %d bytes of LWT data\r\n", clientcon->connect_info.will_data_len);
             } else {
               MQTT_ERROR("MQTT: Out of mem\r\n");
               msg_conn_ret = CONNECTION_REFUSE_SERVER_UNAVAILABLE;
@@ -399,6 +414,7 @@ READPACKET:
       if (QUEUE_Puts(&clientcon->msgQueue, clientcon->mqtt_state.outbound_message->data, clientcon->mqtt_state.outbound_message->length) == -1) {
         MQTT_ERROR("MQTT: Queue full\r\n");
       }
+
       break;
 
     case MQTT_DATA:
@@ -451,6 +467,9 @@ READPACKET:
           if (QUEUE_Puts(&clientcon->msgQueue, clientcon->mqtt_state.outbound_message->data, clientcon->mqtt_state.outbound_message->length) == -1) {
             MQTT_ERROR("MQTT: Queue full\r\n");
           }
+
+          find_retainedtopic(topic_buffer, publish_retainedtopic, clientcon);
+
           break;
 
         case MQTT_MSG_TYPE_UNSUBSCRIBE:
@@ -511,10 +530,14 @@ READPACKET:
           data = (uint8_t*)mqtt_get_publish_data(clientcon->mqtt_state.in_buffer, &data_len);
 
           MQTT_INFO("MQTT: Published topic \"%s\"\r\n", topic_buffer);
-          MQTT_INFO("MQTT: Matches to:\r\n", topic_buffer);
+          MQTT_INFO("MQTT: Matches to:\r\n");
 
           // Now find, if anything matches and enque publish message
           find_topic(topic_buffer, publish_topic, data, data_len);
+
+          if (mqtt_get_retain(clientcon->mqtt_state.in_buffer)) {
+            update_retainedtopic(topic_buffer, data, data_len, mqtt_get_qos(clientcon->mqtt_state.in_buffer));
+          }
           
           break;
 
@@ -687,11 +710,12 @@ MQTT_ServerTask(os_event_t *e)
 }
 
 
-bool ICACHE_FLASH_ATTR MQTT_server_start(uint16_t portno)
+bool ICACHE_FLASH_ATTR MQTT_server_start(uint16_t portno, uint16_t max_subscriptions, uint16_t max_retained_topics)
 {
     MQTT_INFO("Starting MQTT server on port %d\r\n", portno);
 
-    if (!create_topiclist(MAX_TOPICS)) return false;
+    if (!create_topiclist(max_subscriptions)) return false;
+    if (!create_retainedlist(max_retained_topics)) return false;
     clientcon_list = NULL;
 
     struct espconn *pCon = (struct espconn *)os_zalloc(sizeof(struct espconn));

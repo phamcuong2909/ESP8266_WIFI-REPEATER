@@ -32,6 +32,6 @@ typedef struct _MQTT_ClientCon {
 
 extern MQTT_ClientCon *clientcon_list;
 
-bool mqtt_server_start(uint16_t portno);
+bool MQTT_server_start(uint16_t portno, uint16_t max_subscriptions, uint16_t max_retained_topics);
 
 #endif /* _MQTT_SERVER_H_ */

@@ -38,6 +38,7 @@
 #ifdef MQTT_BROKER
 #include "mqtt_server.h"
 #include "mqtt_topiclist.h"
+#include "mqtt_retainedlist.h"
 #endif
 
 uint32_t readvdd33(void);
@@ -594,7 +595,16 @@ bool ICACHE_FLASH_ATTR printf_topic(topic_entry *topic, void *user_data)
 {
   uint8_t *response = (uint8_t *)user_data;
 
-  os_sprintf(response, "Client: %s Topic: \"%s\" QoS: %d\r\n", topic->clientcon->connect_info.client_id, topic->topic, topic->qos);
+  os_sprintf(response, "%s: \"%s\" (QoS %d)\r\n", topic->clientcon->connect_info.client_id, topic->topic, topic->qos);
+  ringbuf_memcpy_into(console_tx_buffer, response, os_strlen(response));
+  return false;
+}
+
+bool ICACHE_FLASH_ATTR printf_retainedtopic(retained_entry *entry, void *user_data)
+{
+  uint8_t *response = (uint8_t *)user_data;
+
+  os_sprintf(response, "\"%s\" len: %d (QoS %d)\r\n", entry->topic, entry->data_len, entry->qos);
   ringbuf_memcpy_into(console_tx_buffer, response, os_strlen(response));
   return false;
 }
@@ -822,6 +832,10 @@ void ICACHE_FLASH_ATTR console_handle_command(struct espconn *pespconn)
            os_sprintf(response, "\r\nCurrent subsriptions:\r\n");
 	   ringbuf_memcpy_into(console_tx_buffer, response, os_strlen(response));
            iterate_topics(printf_topic, response);
+           os_sprintf(response, "Retained topics:\r\n");
+	   ringbuf_memcpy_into(console_tx_buffer, response, os_strlen(response));
+           iterate_retainedtopics(printf_retainedtopic, response);
+
 	   goto command_handled_2;
       }
 #endif
@@ -1941,7 +1955,7 @@ struct ip_info info;
     system_update_cpu_freq(config.clock_speed);
 
 #ifdef MQTT_BROKER
-    MQTT_server_start(1883);
+    MQTT_server_start(1883 /*port*/, 50 /*max_subscriptions*/, 50 /*max_retained_items*/);
 #endif
 
     // Start the timer

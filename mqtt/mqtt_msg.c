@@ -343,7 +343,7 @@ mqtt_message_t* ICACHE_FLASH_ATTR mqtt_msg_connect(mqtt_connection_t* connection
     if (append_string(connection, info->will_topic, os_strlen(info->will_topic)) < 0)
       return fail_message(connection);
 
-    if (append_string(connection, info->will_message, os_strlen(info->will_message)) < 0)
+    if (append_string(connection, info->will_data, os_strlen(info->will_data)) < 0)
       return fail_message(connection);
 
     variable_header->flags |= MQTT_CONNECT_FLAG_WILL;
