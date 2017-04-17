@@ -22,7 +22,7 @@ The complete functionality is included in the mqtt directory. The broker is star
 
 mqtt_server_start(1883);
 
-in the user_init() function. The code can be be used in any project that is compiled using the esp-open-sdk (https://github.com/pfalcon/esp-open-sdk). Thanks to Tuan PM for sharing his MQTT client library https://github.com/tuanpmt/esp_mqtt as a basis with us.
+in the user_init() function. The code can be used in any project that is compiled using the esp-open-sdk (https://github.com/pfalcon/esp-open-sdk). Thanks to Tuan PM for sharing his MQTT client library https://github.com/tuanpmt/esp_mqtt as a basis with us.
 
 The current demo program is based on and included in the uMQTT_broker branch of the esp_wifi_repeater NAT router (without monitoring, acls, etc..), but it uses the router only as implementation environment. Binary firmware can be found in the firmware directory. For infos on flashing, building and using the provided demo program look into the master branch of this project (https://github.com/martin-ger/esp_wifi_repeater/blob/master/README.md).
 

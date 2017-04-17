@@ -325,7 +325,7 @@ READPACKET:
           // Get the LWT
           clientcon->connect_info.will_retain = (variable_header->flags & MQTT_CONNECT_FLAG_WILL_RETAIN) != 0;
           clientcon->connect_info.will_qos = (variable_header->flags & 0x18)>>3;
-          if (!variable_header->flags & MQTT_CONNECT_FLAG_WILL) {
+          if (!(variable_header->flags & MQTT_CONNECT_FLAG_WILL)) {
             // Must be all 0 if no lwt is given
             if (clientcon->connect_info.will_retain || clientcon->connect_info.will_qos) {
               MQTT_WARNING("MQTT: Last Will flags invalid\r\n");
