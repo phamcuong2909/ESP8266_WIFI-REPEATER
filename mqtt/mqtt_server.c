@@ -27,6 +27,46 @@ MQTT_ClientCon *clientcon_list;
 #define MQTT_WARNING os_printf
 #define MQTT_ERROR os_printf
 
+
+bool ICACHE_FLASH_ATTR print_topic(topic_entry *topic, void* user_data)
+{
+  MQTT_INFO("MQTT: Client: %s Topic: \"%s\" QoS: %d\r\n", topic->clientcon->connect_info.client_id, topic->topic, topic->qos);
+  return false;
+}
+
+
+bool ICACHE_FLASH_ATTR publish_topic(topic_entry *topic, uint8_t *data, uint16_t data_len)
+{
+MQTT_ClientCon *clientcon = topic->clientcon;
+uint16_t message_id;
+
+  MQTT_INFO("MQTT: Client: %s Topic: \"%s\" QoS: %d\r\n", clientcon->connect_info.client_id, topic->topic, topic->qos);
+
+  clientcon->mqtt_state.outbound_message = 
+       mqtt_msg_publish(&clientcon->mqtt_state.mqtt_connection, topic->topic, data, data_len, topic->qos, 0, &message_id);
+  if (QUEUE_Puts(&clientcon->msgQueue, clientcon->mqtt_state.outbound_message->data, clientcon->mqtt_state.outbound_message->length) == -1) {
+    MQTT_ERROR("MQTT: Queue full\r\n");
+    return false;
+  }
+  return true;
+}
+
+
+bool ICACHE_FLASH_ATTR activate_next_client()
+{
+MQTT_ClientCon *clientcon = clientcon_list;
+
+  for (clientcon = clientcon_list; clientcon != NULL; clientcon = clientcon->next) {
+    if (!QUEUE_IsEmpty(&clientcon->msgQueue)) {
+      MQTT_INFO("MQTT: Next message to client: %s\r\n", clientcon->connect_info.client_id);
+      system_os_post(MQTT_TASK_PRIO, 0, (os_param_t)clientcon);  
+      return true;
+     }
+  }
+  return true;
+}
+
+
 bool ICACHE_FLASH_ATTR
 MQTT_InitClientCon(MQTT_ClientCon *mqttClientCon)
 {
@@ -123,6 +163,11 @@ MQTT_DeleteClientCon(MQTT_ClientCon *mqttClientCon)
   }
 
   if (mqttClientCon->connect_info.will_topic != NULL) {
+    // Publish the LWT
+    find_topic(mqttClientCon->connect_info.will_topic, publish_topic, 
+       mqttClientCon->connect_info.will_message, os_strlen(mqttClientCon->connect_info.will_message));
+    activate_next_client();
+
     os_free(mqttClientCon->connect_info.will_topic);
     mqttClientCon->connect_info.will_topic = NULL;
   }
@@ -139,45 +184,6 @@ MQTT_DeleteClientCon(MQTT_ClientCon *mqttClientCon)
 
   delete_topic(mqttClientCon, 0);
 
-  return true;
-}
-
-
-bool ICACHE_FLASH_ATTR print_topic(topic_entry *topic, void* user_data)
-{
-  MQTT_INFO("MQTT: Client: %s Topic: \"%s\" QoS: %d\r\n", topic->clientcon->connect_info.client_id, topic->topic, topic->qos);
-  return false;
-}
-
-
-bool ICACHE_FLASH_ATTR publish_topic(topic_entry *topic, uint8_t *data, uint16_t data_len)
-{
-MQTT_ClientCon *clientcon = topic->clientcon;
-uint16_t message_id;
-
-  MQTT_INFO("MQTT: Client: %s Topic: \"%s\" QoS: %d\r\n", clientcon->connect_info.client_id, topic->topic, topic->qos);
-
-  clientcon->mqtt_state.outbound_message = 
-       mqtt_msg_publish(&clientcon->mqtt_state.mqtt_connection, topic->topic, data, data_len, topic->qos, 0, &message_id);
-  if (QUEUE_Puts(&clientcon->msgQueue, clientcon->mqtt_state.outbound_message->data, clientcon->mqtt_state.outbound_message->length) == -1) {
-    MQTT_ERROR("MQTT: Queue full\r\n");
-    return false;
-  }
-  return true;
-}
-
-
-bool ICACHE_FLASH_ATTR activate_next_client()
-{
-MQTT_ClientCon *clientcon = clientcon_list;
-
-  for (clientcon = clientcon_list; clientcon != NULL; clientcon = clientcon->next) {
-    if (!QUEUE_IsEmpty(&clientcon->msgQueue)) {
-      MQTT_INFO("MQTT: Next message to client: %s\r\n", clientcon->connect_info.client_id);
-      system_os_post(MQTT_TASK_PRIO, 0, (os_param_t)clientcon);  
-      return true;
-     }
-  }
   return true;
 }
 
@@ -274,11 +280,10 @@ READPACKET:
 
           MQTT_INFO("MQTT: Connect flags %x\r\n", variable_header->flags);
           clientcon->connect_info.clean_session = (variable_header->flags & MQTT_CONNECT_FLAG_CLEAN_SESSION) != 0;
-          if ((variable_header->flags & MQTT_CONNECT_FLAG_WILL) != 0 ||
-              (variable_header->flags & MQTT_CONNECT_FLAG_USERNAME) != 0 ||
+          if ((variable_header->flags & MQTT_CONNECT_FLAG_USERNAME) != 0 ||
               (variable_header->flags & MQTT_CONNECT_FLAG_PASSWORD) != 0) {
             MQTT_WARNING("MQTT: Connect option currently not supported\r\n");
-            msg_conn_ret = CONNECTION_REFUSE_SERVER_UNAVAILABLE;
+            msg_conn_ret = CONNECTION_REFUSE_NOT_AUTHORIZED;
             clientcon->connState = TCP_DISCONNECTING;
             break;
           }
@@ -286,6 +291,7 @@ READPACKET:
           espconn_regist_time(clientcon->pCon,  2*clientcon->connect_info.keepalive, 1);
           MQTT_INFO("MQTT: Keepalive %d\r\n", clientcon->connect_info.keepalive);
 
+          // Get the client id
           uint16_t id_len = clientcon->mqtt_state.message_length - (2+sizeof(struct mqtt_connect_variable_header));
           const char *client_id = mqtt_get_str(&clientcon->mqtt_state.in_buffer[2+sizeof(struct mqtt_connect_variable_header)], &id_len);
           if (client_id == NULL || id_len > 80) {
@@ -315,6 +321,71 @@ READPACKET:
               break;
             }
           }
+
+          // Get the LWT
+          clientcon->connect_info.will_retain = (variable_header->flags & MQTT_CONNECT_FLAG_WILL_RETAIN) != 0;
+          clientcon->connect_info.will_qos = (variable_header->flags & 0x18)>>3;
+          if (!variable_header->flags & MQTT_CONNECT_FLAG_WILL) {
+            // Must be all 0 if no lwt is given
+            if (clientcon->connect_info.will_retain || clientcon->connect_info.will_qos) {
+              MQTT_WARNING("MQTT: Last Will flags invalid\r\n");
+              MQTT_ServerDisconnect(clientcon);
+              return;
+            }
+          } else {
+            uint16_t lw_topic_len = clientcon->mqtt_state.message_length - (4+sizeof(struct mqtt_connect_variable_header)+id_len);
+            const char *lw_topic = mqtt_get_str(&clientcon->mqtt_state.in_buffer[4+sizeof(struct mqtt_connect_variable_header)+id_len], &lw_topic_len);
+
+            if (lw_topic == NULL) {
+              MQTT_WARNING("MQTT: Last Will topic invalid\r\n");
+              MQTT_ServerDisconnect(clientcon);
+              return;
+            }
+
+            clientcon->connect_info.will_topic = (char *) os_zalloc(lw_topic_len+1);
+            if (clientcon->connect_info.will_topic != NULL) {
+              os_memcpy(clientcon->connect_info.will_topic, lw_topic, lw_topic_len);
+              clientcon->connect_info.will_topic[lw_topic_len]=0;
+              if (Topics_hasWildcards(clientcon->connect_info.will_topic)) {
+                os_free(clientcon->connect_info.will_topic);
+                clientcon->connect_info.will_topic = NULL;
+                MQTT_WARNING("MQTT: Last Will topic has wildcards\r\n");
+                MQTT_ServerDisconnect(clientcon);
+                return;
+              }
+              MQTT_INFO("MQTT: LWT topic %s\r\n", clientcon->connect_info.will_topic);
+            } else {
+              MQTT_ERROR("MQTT: Out of mem\r\n");
+              msg_conn_ret = CONNECTION_REFUSE_SERVER_UNAVAILABLE;
+              clientcon->connState = TCP_DISCONNECTING;
+              break;
+            }
+
+            uint16_t lw_data_len = clientcon->mqtt_state.message_length - (6+sizeof(struct mqtt_connect_variable_header)+id_len+lw_topic_len);
+            const char *lw_data = mqtt_get_str(&clientcon->mqtt_state.in_buffer[6+sizeof(struct mqtt_connect_variable_header)+id_len+lw_topic_len], &lw_data_len);
+
+            if (lw_data == NULL) {
+              os_free(clientcon->connect_info.will_topic);
+              clientcon->connect_info.will_topic = NULL;
+              MQTT_WARNING("MQTT: Last Will data invalid\r\n");
+              MQTT_ServerDisconnect(clientcon);
+              return;
+            }
+
+            clientcon->connect_info.will_message = (char *) os_zalloc(lw_data_len+1);
+            if (clientcon->connect_info.will_message != NULL) {
+              os_memcpy(clientcon->connect_info.will_message, lw_data, lw_data_len);
+              clientcon->connect_info.will_message[lw_data_len]=0;
+              MQTT_INFO("MQTT: LWT message %s\r\n", clientcon->connect_info.will_message);
+            } else {
+              MQTT_ERROR("MQTT: Out of mem\r\n");
+              msg_conn_ret = CONNECTION_REFUSE_SERVER_UNAVAILABLE;
+              clientcon->connState = TCP_DISCONNECTING;
+              break;
+            }
+          }
+
+
           msg_conn_ret = CONNECTION_ACCEPTED;
           clientcon->connState = MQTT_DATA;
           break;
@@ -457,6 +528,12 @@ READPACKET:
 
         case MQTT_MSG_TYPE_DISCONNECT:
           MQTT_INFO("MQTT: receive MQTT_MSG_TYPE_DISCONNECT\r\n");
+
+          // Clean session close: no LWT
+          if (clientcon->connect_info.will_topic != NULL) {
+            os_free(clientcon->connect_info.will_topic);
+            clientcon->connect_info.will_topic = NULL;
+          }
           MQTT_ServerDisconnect(clientcon);
           return;
 
