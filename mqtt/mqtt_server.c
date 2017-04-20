@@ -286,6 +286,19 @@ READPACKET:
             MQTT_ServerDisconnect(clientcon);
             return;
           }
+#if defined(PROTOCOL_NAMEv31)
+          // We expect MQTT v3.1 (version 3)
+          struct mqtt_connect_variable_header* variable_header = 
+                 (struct mqtt_connect_variable_header*)&clientcon->mqtt_state.in_buffer[2];
+          if ((variable_header->lengthMsb<<8) + variable_header->lengthLsb != 6 || 
+              os_strncmp(variable_header->magic, "MQIsdp", 6) != 0 ||
+              variable_header->version != 3) {
+            MQTT_WARNING("MQTT: Wrong protocoll version\r\n");
+            msg_conn_ret = CONNECTION_REFUSE_PROTOCOL;
+            clientcon->connState = TCP_DISCONNECTING;
+            break;
+          }
+#elif defined(PROTOCOL_NAMEv311)
           // We expect MQTT v3.11 (version 4)
           struct mqtt_connect_variable_header* variable_header = 
                  (struct mqtt_connect_variable_header*)&clientcon->mqtt_state.in_buffer[2];
@@ -297,6 +310,9 @@ READPACKET:
             clientcon->connState = TCP_DISCONNECTING;
             break;
           }
+#else
+#error "Please define protocol name"
+#endif
 
           MQTT_INFO("MQTT: Connect flags %x\r\n", variable_header->flags);
           clientcon->connect_info.clean_session = (variable_header->flags & MQTT_CONNECT_FLAG_CLEAN_SESSION) != 0;
@@ -321,6 +337,12 @@ READPACKET:
             break;
           }
           if (id_len == 0) {
+#if defined(PROTOCOL_NAMEv31)
+            MQTT_WARNING("MQTT: Empty client Id\r\n");
+            msg_conn_ret = CONNECTION_REFUSE_ID_REJECTED;
+            clientcon->connState = TCP_DISCONNECTING;
+            break;
+#endif
             if (!clientcon->connect_info.clean_session) {
               MQTT_WARNING("MQTT: Null client Id and NOT cleansession\r\n");
               msg_conn_ret = CONNECTION_REFUSE_ID_REJECTED;
