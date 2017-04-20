@@ -183,6 +183,11 @@ MQTT_DeleteClientCon(MQTT_ClientCon *mqttClientCon)
        mqttClientCon->connect_info.will_data, mqttClientCon->connect_info.will_data_len);
     activate_next_client();
 
+    if (mqttClientCon->connect_info.will_retain) {
+      update_retainedtopic(mqttClientCon->connect_info.will_topic, mqttClientCon->connect_info.will_data, 
+         mqttClientCon->connect_info.will_data_len, mqttClientCon->connect_info.will_qos);
+    }
+
     os_free(mqttClientCon->connect_info.will_topic);
     mqttClientCon->connect_info.will_topic = NULL;
   }
