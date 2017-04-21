@@ -1,6 +1,19 @@
 #include "user_interface.h"
 #include "mem.h"
 
+/* Mem Debug
+#undef os_free
+#define os_free(x) {os_printf("F:%d-> %x\r\n", __LINE__,(x));vPortFree(x, "", 0);}
+
+int my_os_zalloc(int len, int line) {
+int _v = pvPortZalloc(len, "", 0);
+os_printf("A:%d-> %x (%d)\r\n", line, _v, len);
+return _v;
+}
+#undef os_zalloc
+#define os_zalloc(x) my_os_zalloc(x, __LINE__)
+*/
+
 #include "mqtt_server.h"
 #include "mqtt_topics.h"
 #include "mqtt_topiclist.h"
@@ -204,6 +217,8 @@ MQTT_DeleteClientCon(MQTT_ClientCon *mqttClientCon)
 
   delete_topic(mqttClientCon, 0);
 
+  os_free(mqttClientCon);
+
   return true;
 }
 
@@ -211,6 +226,8 @@ MQTT_DeleteClientCon(MQTT_ClientCon *mqttClientCon)
 void ICACHE_FLASH_ATTR
 MQTT_ServerDisconnect(MQTT_ClientCon *mqttClientCon)
 {
+  MQTT_INFO("MQTT:ServerDisconnect\r\n");
+
   mqttClientCon->mqtt_state.message_length_read = 0;
   mqttClientCon->connState = TCP_DISCONNECTED;
   system_os_post(MQTT_TASK_PRIO, 0, (os_param_t)mqttClientCon);
@@ -389,8 +406,6 @@ READPACKET:
               os_memcpy(clientcon->connect_info.will_topic, lw_topic, lw_topic_len);
               clientcon->connect_info.will_topic[lw_topic_len]=0;
               if (Topics_hasWildcards(clientcon->connect_info.will_topic)) {
-                os_free(clientcon->connect_info.will_topic);
-                clientcon->connect_info.will_topic = NULL;
                 MQTT_WARNING("MQTT: Last Will topic has wildcards\r\n");
                 MQTT_ServerDisconnect(clientcon);
                 return;
@@ -407,8 +422,6 @@ READPACKET:
             const char *lw_data = mqtt_get_str(&clientcon->mqtt_state.in_buffer[6+sizeof(struct mqtt_connect_variable_header)+id_len+lw_topic_len], &lw_data_len);
 
             if (lw_data == NULL) {
-              os_free(clientcon->connect_info.will_topic);
-              clientcon->connect_info.will_topic = NULL;
               MQTT_WARNING("MQTT: Last Will data invalid\r\n");
               MQTT_ServerDisconnect(clientcon);
               return;
@@ -663,6 +676,11 @@ static void ICACHE_FLASH_ATTR MQTT_ClientCon_sent_cb(void *arg)
 
     clientcon->sendTimeout = 0;
 
+    if (clientcon->connState == TCP_DISCONNECTING) {
+      clientcon->connState = TCP_DISCONNECTED;
+      espconn_disconnect(clientcon->pCon);
+    }
+
     activate_next_client();
 }
 
@@ -714,13 +732,11 @@ MQTT_ServerTask(os_event_t *e)
       break;
     case TCP_DISCONNECTING:
     case MQTT_DATA:
-      if (QUEUE_IsEmpty(&clientcon->msgQueue) || clientcon->sendTimeout != 0) {
-        break;
-      }
-      if (QUEUE_Gets(&clientcon->msgQueue, dataBuffer, &dataLen, MQTT_BUF_SIZE) == 0) {
+      if (!QUEUE_IsEmpty(&clientcon->msgQueue) && clientcon->sendTimeout == 0 &&
+          QUEUE_Gets(&clientcon->msgQueue, dataBuffer, &dataLen, MQTT_BUF_SIZE) == 0) {
+
         clientcon->mqtt_state.pending_msg_type = mqtt_get_type(dataBuffer);
         clientcon->mqtt_state.pending_msg_id = mqtt_get_id(dataBuffer, dataLen);
-
 
         clientcon->sendTimeout = MQTT_SEND_TIMOUT;
         MQTT_INFO("MQTT: Sending, type: %d, id: %04X\r\n", clientcon->mqtt_state.pending_msg_type, clientcon->mqtt_state.pending_msg_id);
@@ -729,10 +745,10 @@ MQTT_ServerTask(os_event_t *e)
         clientcon->mqtt_state.outbound_message = NULL;
         break;
       }
+      if (clientcon->connState == TCP_DISCONNECTING) {
+        MQTT_ServerDisconnect(clientcon);
+      }
       break;
-  }
-  if (clientcon->connState == TCP_DISCONNECTING) {
-    MQTT_ServerDisconnect(clientcon);
   }
 }
 
