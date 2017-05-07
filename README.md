@@ -2,7 +2,7 @@
 A basic MQTT Broker on the ESP8266
 
 The broker does support:
-- a subset of MQTT v3.1/v3.1.1 (CONNECT, DISCONNECT, SUBSCRIBE, UNSUBSCRIBE, PUBLISH, PING)
+- a subset of MQTT v3.1.1/v3.1 (CONNECT, DISCONNECT, SUBSCRIBE, UNSUBSCRIBE, PUBLISH, PING)
 - a smaller number of clients (at least 5 have been tested) based on the config of lwip
 - retained messages
 - LWT
@@ -30,6 +30,6 @@ Current status of the uMQTT broker can be seen by entering:
 
 at the console (serial or telnet to port 7777).
 
-Current precompiled firmware supports MQTT protocoll version v3.1. Can be changed in mqtt_msg.h
+Current precompiled firmware supports MQTT protocoll version v3.1.1. Can be changed in mqtt_msg.h
 
 

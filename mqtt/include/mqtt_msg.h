@@ -47,8 +47,8 @@ extern "C" {
 /*|      --- Message Type----     |  DUP Flag |    QoS Level    | Retain  |
 /*                    Remaining Length                 */
 
-#undef PROTOCOL_NAMEv311
-#define PROTOCOL_NAMEv31
+#undef PROTOCOL_NAMEv31
+#define PROTOCOL_NAMEv311
 
 enum mqtt_message_type
 {
