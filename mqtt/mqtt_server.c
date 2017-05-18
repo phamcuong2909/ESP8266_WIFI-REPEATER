@@ -47,15 +47,15 @@ bool ICACHE_FLASH_ATTR print_topic(topic_entry *topic, void* user_data)
 }
 
 
-bool ICACHE_FLASH_ATTR publish_topic(topic_entry *topic, uint8_t *data, uint16_t data_len)
+bool ICACHE_FLASH_ATTR publish_topic(topic_entry *topic_e, uint8_t *topic, uint8_t *data, uint16_t data_len)
 {
-MQTT_ClientCon *clientcon = topic->clientcon;
+MQTT_ClientCon *clientcon = topic_e->clientcon;
 uint16_t message_id = 0;
 
-  MQTT_INFO("MQTT: Client: %s Topic: \"%s\" QoS: %d\r\n", clientcon->connect_info.client_id, topic->topic, topic->qos);
+  MQTT_INFO("MQTT: Client: %s Topic: \"%s\" QoS: %d\r\n", clientcon->connect_info.client_id, topic_e->topic, topic_e->qos);
 
   clientcon->mqtt_state.outbound_message = 
-       mqtt_msg_publish(&clientcon->mqtt_state.mqtt_connection, topic->topic, data, data_len, topic->qos, 0, &message_id);
+       mqtt_msg_publish(&clientcon->mqtt_state.mqtt_connection, topic, data, data_len, topic_e->qos, 0, &message_id);
   if (QUEUE_Puts(&clientcon->msgQueue, clientcon->mqtt_state.outbound_message->data, clientcon->mqtt_state.outbound_message->length) == -1) {
     MQTT_ERROR("MQTT: Queue full\r\n");
     return false;

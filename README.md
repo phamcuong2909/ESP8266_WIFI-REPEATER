@@ -11,6 +11,7 @@ The broker does support:
 The broker does not yet support:
 - username, password authentication
 - QoS levels other than 0
+- more than 5 TCP(=MQTT) clients
 - non-clear sessions
 - TLS
 

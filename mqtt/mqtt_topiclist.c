@@ -67,7 +67,7 @@ bool retval = false;
   for (i=0; i<max_entry; i++) {
     if (topic_list[i].clientcon != NULL) {
       if (Topics_matches(topic_list[i].topic, 1, topic)) {
-        (*cb) (&topic_list[i], data, data_len);
+        (*cb) (&topic_list[i], topic, data, data_len);
         retval = true;
       }
     }

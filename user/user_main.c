@@ -1838,6 +1838,10 @@ struct ip_info info;
     UART_init_console(BIT_RATE_115200, 0, console_rx_buffer, console_tx_buffer);
 
     os_printf("\r\n\r\nWiFi Router/MQTT Broker V1.5 starting\r\n");
+#ifdef MQTT_BROKER
+    //espconn_tcp_set_max_con(10);
+    os_printf("Max number of TCP clients: %d\r\n", espconn_tcp_get_max_con());
+#endif
 
     // Load config
     if (config_load(&config)== 0) {
