@@ -37,13 +37,16 @@ The broker comes with a "LOCAL client", which means, the broker itself can publi
 
 - publish [topic] [data]: this publishes a topic
 - subscribe [topic]: subscribes to a topic, received topic will be printed to serial output
-- unsubscribe [topic]: subscribes from a topic
+- unsubscribe [topic]: unsubscribes from a topic
 
 This feature is meant to provide the basis for a local rule engine that can react on MQTT events, e.g. to switch GPIOs or send other messages (MQTT, HTTP,...). You can use this with the functions:
 
 bool MQTT_local_publish(uint8_t* topic, uint8_t* data, uint16_t data_length, uint8_t qos, uint8_t retain);
+
 bool MQTT_local_subscribe(uint8_t* topic, uint8_t qos);
+
 bool MQTT_local_unsubscribe(uint8_t* topic);
+
 void MQTT_local_onData(MqttDataCallback dataCb);
 
 
