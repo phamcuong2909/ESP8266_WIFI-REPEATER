@@ -26,6 +26,7 @@ typedef struct _MQTT_ClientCon {
   uint32_t sendTimeout;
   tConnState connState;
   QUEUE msgQueue;
+  uint8_t protocolVersion;
   void* user_data;
   struct _MQTT_ClientCon *next;
 } MQTT_ClientCon;

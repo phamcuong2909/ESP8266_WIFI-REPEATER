@@ -47,8 +47,6 @@ extern "C" {
 /*|      --- Message Type----     |  DUP Flag |    QoS Level    | Retain  |
 /*                    Remaining Length                 */
 
-#undef PROTOCOL_NAMEv31
-#define PROTOCOL_NAMEv311
 
 enum mqtt_message_type
 {
@@ -132,6 +130,28 @@ struct __attribute((__packed__)) mqtt_connect_variable_header
 #else
 #error "Please define protocol name"
 #endif
+  uint8_t version;
+  uint8_t flags;
+  uint8_t keepaliveMsb;
+  uint8_t keepaliveLsb;
+};
+
+struct __attribute((__packed__)) mqtt_connect_variable_header3
+{
+  uint8_t lengthMsb;
+  uint8_t lengthLsb;
+  uint8_t magic[6];
+  uint8_t version;
+  uint8_t flags;
+  uint8_t keepaliveMsb;
+  uint8_t keepaliveLsb;
+};
+
+struct __attribute((__packed__)) mqtt_connect_variable_header4
+{
+  uint8_t lengthMsb;
+  uint8_t lengthLsb;
+  uint8_t magic[4];
   uint8_t version;
   uint8_t flags;
   uint8_t keepaliveMsb;

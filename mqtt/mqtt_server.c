@@ -106,6 +106,7 @@ MQTT_InitClientCon(MQTT_ClientCon *mqttClientCon)
   os_memset(&mqttClientCon->connect_info, 0, sizeof(mqtt_connect_info_t));
 
   mqttClientCon->connect_info.client_id = zero_len_id;
+  mqttClientCon->protocolVersion = 0;
 
   mqttClientCon->mqtt_state.in_buffer = (uint8_t *)os_zalloc(MQTT_BUF_SIZE);
   mqttClientCon->mqtt_state.in_buffer_length = MQTT_BUF_SIZE;
@@ -303,33 +304,39 @@ READPACKET:
             MQTT_ServerDisconnect(clientcon);
             return;
           }
-#if defined(PROTOCOL_NAMEv31)
-          // We expect MQTT v3.1 (version 3)
-          struct mqtt_connect_variable_header* variable_header = 
-                 (struct mqtt_connect_variable_header*)&clientcon->mqtt_state.in_buffer[2];
-          if ((variable_header->lengthMsb<<8) + variable_header->lengthLsb != 6 || 
-              os_strncmp(variable_header->magic, "MQIsdp", 6) != 0 ||
-              variable_header->version != 3) {
-            MQTT_WARNING("MQTT: Wrong protocoll version\r\n");
-            msg_conn_ret = CONNECTION_REFUSE_PROTOCOL;
-            clientcon->connState = TCP_DISCONNECTING;
-            break;
+
+          struct mqtt_connect_variable_header4* variable_header = 
+                 (struct mqtt_connect_variable_header4*)&clientcon->mqtt_state.in_buffer[2];
+          uint16_t var_header_len = sizeof(struct mqtt_connect_variable_header4);
+
+          // We check MQTT v3.11 (version 4)
+          if ((variable_header->lengthMsb<<8) + variable_header->lengthLsb == 4 && 
+              variable_header->version == 4 &&
+              os_strncmp(variable_header->magic, "MQTT", 4) == 0) {
+            clientcon->protocolVersion = 4;
+          } else {
+            struct mqtt_connect_variable_header3* variable_header3 = 
+                 (struct mqtt_connect_variable_header3*)&clientcon->mqtt_state.in_buffer[2];
+            var_header_len = sizeof(struct mqtt_connect_variable_header3);
+
+            // We check MQTT v3.1 (version 3)
+            if ((variable_header3->lengthMsb<<8) + variable_header3->lengthLsb == 6 && 
+                variable_header3->version == 3 &&
+                os_strncmp(variable_header3->magic, "MQIsdp", 6) == 0) {
+              clientcon->protocolVersion = 3;
+              // adapt the remaining header fields (dirty as we overlay the two structs of different length)
+              variable_header->version = variable_header3->version;
+              variable_header->flags = variable_header3->flags;
+              variable_header->keepaliveMsb = variable_header3->keepaliveMsb;
+              variable_header->keepaliveLsb = variable_header3->keepaliveLsb;
+            } else {
+            // Neither found
+              MQTT_WARNING("MQTT: Wrong protocoll version\r\n");
+              msg_conn_ret = CONNECTION_REFUSE_PROTOCOL;
+              clientcon->connState = TCP_DISCONNECTING;
+              break;
+            }
           }
-#elif defined(PROTOCOL_NAMEv311)
-          // We expect MQTT v3.11 (version 4)
-          struct mqtt_connect_variable_header* variable_header = 
-                 (struct mqtt_connect_variable_header*)&clientcon->mqtt_state.in_buffer[2];
-          if ((variable_header->lengthMsb<<8) + variable_header->lengthLsb != 4 || 
-              os_strncmp(variable_header->magic, "MQTT", 4) != 0 ||
-              variable_header->version != 4) {
-            MQTT_WARNING("MQTT: Wrong protocoll version\r\n");
-            msg_conn_ret = CONNECTION_REFUSE_PROTOCOL;
-            clientcon->connState = TCP_DISCONNECTING;
-            break;
-          }
-#else
-#error "Please define protocol name"
-#endif
 
           MQTT_INFO("MQTT: Connect flags %x\r\n", variable_header->flags);
           clientcon->connect_info.clean_session = (variable_header->flags & MQTT_CONNECT_FLAG_CLEAN_SESSION) != 0;
@@ -345,8 +352,8 @@ READPACKET:
           MQTT_INFO("MQTT: Keepalive %d\r\n", clientcon->connect_info.keepalive);
 
           // Get the client id
-          uint16_t id_len = clientcon->mqtt_state.message_length - (2+sizeof(struct mqtt_connect_variable_header));
-          const char *client_id = mqtt_get_str(&clientcon->mqtt_state.in_buffer[2+sizeof(struct mqtt_connect_variable_header)], &id_len);
+          uint16_t id_len = clientcon->mqtt_state.message_length - (2+var_header_len);
+          const char *client_id = mqtt_get_str(&clientcon->mqtt_state.in_buffer[2+var_header_len], &id_len);
           if (client_id == NULL || id_len > 80) {
             MQTT_WARNING("MQTT: Client Id invalid\r\n");
             msg_conn_ret = CONNECTION_REFUSE_ID_REJECTED;
@@ -354,12 +361,12 @@ READPACKET:
             break;
           }
           if (id_len == 0) {
-#if defined(PROTOCOL_NAMEv31)
-            MQTT_WARNING("MQTT: Empty client Id\r\n");
-            msg_conn_ret = CONNECTION_REFUSE_ID_REJECTED;
-            clientcon->connState = TCP_DISCONNECTING;
-            break;
-#endif
+            if (clientcon->protocolVersion == 3) {
+              MQTT_WARNING("MQTT: Empty client Id in MQTT 3.1\r\n");
+              msg_conn_ret = CONNECTION_REFUSE_ID_REJECTED;
+              clientcon->connState = TCP_DISCONNECTING;
+              break;
+            }
             if (!clientcon->connect_info.clean_session) {
               MQTT_WARNING("MQTT: Null client Id and NOT cleansession\r\n");
               msg_conn_ret = CONNECTION_REFUSE_ID_REJECTED;
@@ -392,8 +399,8 @@ READPACKET:
               return;
             }
           } else {
-            uint16_t lw_topic_len = clientcon->mqtt_state.message_length - (4+sizeof(struct mqtt_connect_variable_header)+id_len);
-            const char *lw_topic = mqtt_get_str(&clientcon->mqtt_state.in_buffer[4+sizeof(struct mqtt_connect_variable_header)+id_len], &lw_topic_len);
+            uint16_t lw_topic_len = clientcon->mqtt_state.message_length - (4+var_header_len+id_len);
+            const char *lw_topic = mqtt_get_str(&clientcon->mqtt_state.in_buffer[4+var_header_len+id_len], &lw_topic_len);
 
             if (lw_topic == NULL) {
               MQTT_WARNING("MQTT: Last Will topic invalid\r\n");
@@ -418,8 +425,8 @@ READPACKET:
               break;
             }
 
-            uint16_t lw_data_len = clientcon->mqtt_state.message_length - (6+sizeof(struct mqtt_connect_variable_header)+id_len+lw_topic_len);
-            const char *lw_data = mqtt_get_str(&clientcon->mqtt_state.in_buffer[6+sizeof(struct mqtt_connect_variable_header)+id_len+lw_topic_len], &lw_data_len);
+            uint16_t lw_data_len = clientcon->mqtt_state.message_length - (6+var_header_len+id_len+lw_topic_len);
+            const char *lw_data = mqtt_get_str(&clientcon->mqtt_state.in_buffer[6+var_header_len+id_len+lw_topic_len], &lw_data_len);
 
             if (lw_data == NULL) {
               MQTT_WARNING("MQTT: Last Will data invalid\r\n");
