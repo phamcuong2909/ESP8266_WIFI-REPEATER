@@ -34,6 +34,7 @@ os_event_t mqtt_procTaskQueue[MQTT_TASK_QUEUE_SIZE];
 LOCAL uint8_t zero_len_id[2] = { 0, 0 };
 
 MQTT_ClientCon *clientcon_list;
+LOCAL MqttDataCallback local_data_cb = NULL;
 
 #define MQTT_INFO //
 #define MQTT_WARNING os_printf
@@ -42,7 +43,11 @@ MQTT_ClientCon *clientcon_list;
 
 bool ICACHE_FLASH_ATTR print_topic(topic_entry *topic, void* user_data)
 {
-  MQTT_INFO("MQTT: Client: %s Topic: \"%s\" QoS: %d\r\n", topic->clientcon->connect_info.client_id, topic->topic, topic->qos);
+  if (topic->clientcon == LOCAL_MQTT_CLIENT) {
+    MQTT_INFO("MQTT: Client: LOCAL Topic: \"%s\" QoS: %d\r\n", topic->topic, topic->qos);
+  } else {
+    MQTT_INFO("MQTT: Client: %s Topic: \"%s\" QoS: %d\r\n", topic->clientcon->connect_info.client_id, topic->topic, topic->qos);
+  }
   return false;
 }
 
@@ -51,6 +56,13 @@ bool ICACHE_FLASH_ATTR publish_topic(topic_entry *topic_e, uint8_t *topic, uint8
 {
 MQTT_ClientCon *clientcon = topic_e->clientcon;
 uint16_t message_id = 0;
+
+  if (topic_e->clientcon == LOCAL_MQTT_CLIENT) {
+    MQTT_INFO("MQTT: Client: LOCAL Topic: \"%s\" QoS: %d\r\n", topic_e->topic, topic_e->qos);
+    if (local_data_cb != NULL)
+      local_data_cb(NULL, topic, os_strlen(topic), data, data_len);
+    return true;
+  }
 
   MQTT_INFO("MQTT: Client: %s Topic: \"%s\" QoS: %d\r\n", clientcon->connect_info.client_id, topic_e->topic, topic_e->qos);
 
@@ -790,5 +802,31 @@ bool ICACHE_FLASH_ATTR MQTT_server_start(uint16_t portno, uint16_t max_subscript
 
     system_os_task(MQTT_ServerTask, MQTT_TASK_PRIO, mqtt_procTaskQueue, MQTT_TASK_QUEUE_SIZE);
     return true;
+}
+
+
+bool ICACHE_FLASH_ATTR MQTT_local_publish(uint8_t* topic, uint8_t* data, uint16_t data_length, uint8_t qos, uint8_t retain)
+{
+  find_topic(topic, publish_topic, data, data_length);
+  if (retain)
+    update_retainedtopic(topic, data, data_length, qos);
+  activate_next_client();
+  return true;
+}
+
+
+bool ICACHE_FLASH_ATTR MQTT_local_subscribe(uint8_t* topic, uint8_t qos)
+{
+  return add_topic(LOCAL_MQTT_CLIENT, topic, 0);
+}
+
+bool ICACHE_FLASH_ATTR MQTT_local_unsubscribe(uint8_t* topic)
+{
+  return delete_topic(LOCAL_MQTT_CLIENT, topic);
+}
+
+void ICACHE_FLASH_ATTR MQTT_local_onData(MqttDataCallback dataCb)
+{
+  local_data_cb = dataCb;
 }
 

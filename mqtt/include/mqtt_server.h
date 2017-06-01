@@ -10,6 +10,8 @@
 
 #include "mqtt.h"
 
+#define LOCAL_MQTT_CLIENT ((void*)-1)
+
 typedef struct _MQTT_ClientCon {
   struct espconn *pCon;
 //  uint8_t security;
@@ -34,5 +36,10 @@ typedef struct _MQTT_ClientCon {
 extern MQTT_ClientCon *clientcon_list;
 
 bool MQTT_server_start(uint16_t portno, uint16_t max_subscriptions, uint16_t max_retained_topics);
+
+bool MQTT_local_publish(uint8_t* topic, uint8_t* data, uint16_t data_length, uint8_t qos, uint8_t retain);
+bool MQTT_local_subscribe(uint8_t* topic, uint8_t qos);
+bool MQTT_local_unsubscribe(uint8_t* topic);
+void MQTT_local_onData(MqttDataCallback dataCb);
 
 #endif /* _MQTT_SERVER_H_ */

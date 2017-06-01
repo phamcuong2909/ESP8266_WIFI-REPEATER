@@ -595,7 +595,8 @@ bool ICACHE_FLASH_ATTR printf_topic(topic_entry *topic, void *user_data)
 {
   uint8_t *response = (uint8_t *)user_data;
 
-  os_sprintf(response, "%s: \"%s\" (QoS %d)\r\n", topic->clientcon->connect_info.client_id, topic->topic, topic->qos);
+  os_sprintf(response, "%s: \"%s\" (QoS %d)\r\n", 
+    topic->clientcon!=LOCAL_MQTT_CLIENT?topic->clientcon->connect_info.client_id:"LOCAL", topic->topic, topic->qos);
   ringbuf_memcpy_into(console_tx_buffer, response, os_strlen(response));
   return false;
 }
@@ -607,6 +608,11 @@ bool ICACHE_FLASH_ATTR printf_retainedtopic(retained_entry *entry, void *user_da
   os_sprintf(response, "\"%s\" len: %d (QoS %d)\r\n", entry->topic, entry->data_len, entry->qos);
   ringbuf_memcpy_into(console_tx_buffer, response, os_strlen(response));
   return false;
+}
+
+void MQTT_local_DataCallback(uint32_t *args, const char* topic, uint32_t topic_len, const char *data, uint32_t length)
+{
+  os_printf("Received: \"%s\" len: %d\r\n", topic, length); 
 }
 #endif
 
@@ -645,7 +651,7 @@ void ICACHE_FLASH_ATTR console_handle_command(struct espconn *pespconn)
 		"|mqtt"
 #else
 #ifdef MQTT_BROKER
-		"|mqtt_broker"
+		"|mqtt_broker|publish <topic> <data>|subscribe <topic>|unsubscribe <topic>"
 #else
 		""
 #endif
@@ -826,7 +832,7 @@ void ICACHE_FLASH_ATTR console_handle_command(struct espconn *pespconn)
            os_sprintf(response, "Current clients:\r\n");
 	   ringbuf_memcpy_into(console_tx_buffer, response, os_strlen(response));
 	   for (clientcon = clientcon_list; clientcon != NULL; clientcon = clientcon->next) {
-	       os_sprintf(response, "%s, ", clientcon->connect_info.client_id);
+	       os_sprintf(response, "%s%s", clientcon->connect_info.client_id, clientcon->next != NULL?", ":"");
 	       ringbuf_memcpy_into(console_tx_buffer, response, os_strlen(response));
 	   }
            os_sprintf(response, "\r\nCurrent subsriptions:\r\n");
@@ -1038,6 +1044,51 @@ void ICACHE_FLASH_ATTR console_handle_command(struct espconn *pespconn)
 	os_sprintf(response, "Quitting console\r\n");
         goto command_handled;
     }
+
+#ifdef MQTT_BROKER
+    if (strcmp(tokens[0], "publish") == 0)
+    {
+	if (nTokens != 3) {
+            os_sprintf(response, INVALID_NUMARGS);
+            goto command_handled;
+	}
+
+	MQTT_local_publish(tokens[1], tokens[2], os_strlen(tokens[2]), 0, 0);
+
+	os_sprintf(response, "Published topic\r\n");
+        goto command_handled;
+    }
+
+    if (strcmp(tokens[0], "subscribe") == 0)
+    {
+	if (nTokens != 2) {
+            os_sprintf(response, INVALID_NUMARGS);
+            goto command_handled;
+	}
+
+	MQTT_local_subscribe(tokens[1], 0);
+
+	os_sprintf(response, "subscribed topic\r\n");
+        goto command_handled;
+    }
+
+    if (strcmp(tokens[0], "unsubscribe") == 0)
+    {
+	if (nTokens != 2) {
+            os_sprintf(response, INVALID_NUMARGS);
+            goto command_handled;
+	}
+
+	uint8_t retval = MQTT_local_unsubscribe(tokens[1]);
+
+	if (retval)
+	  os_sprintf(response, "unsubscribed topic\r\n");
+	else
+	  os_sprintf(response, "unsubscribe failed\r\n");
+        goto command_handled;
+    }
+#endif
+
 #ifdef ALLOW_SLEEP
     if (strcmp(tokens[0], "sleep") == 0)
     {
@@ -1960,6 +2011,9 @@ struct ip_info info;
 
 #ifdef MQTT_BROKER
     MQTT_server_start(1883 /*port*/, 50 /*max_subscriptions*/, 50 /*max_retained_items*/);
+
+    //MQTT_local_subscribe("/test/#", 0);
+    MQTT_local_onData(MQTT_local_DataCallback);
 #endif
 
     // Start the timer
