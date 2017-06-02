@@ -1,3 +1,5 @@
+This development will be discontinued here. Now moved to: https://github.com/martin-ger/esp_mqtt
+
 # esp_uMQTT_broker
 A basic MQTT Broker on the ESP8266
 
