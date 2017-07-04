@@ -23,6 +23,8 @@
 
 #include "easygpio.h"
 
+#include "ntp.h"
+
 #ifdef ACLS
 #include "acl.h"
 #endif
@@ -1047,6 +1049,13 @@ void ICACHE_FLASH_ATTR console_handle_command(struct espconn *pespconn)
     {
 	remote_console_disconnect = 1;
 	os_sprintf(response, "Quitting console\r\n");
+        goto command_handled;
+    }
+
+    if (strcmp(tokens[0], "ntp") == 0)
+    {
+	ntp_get_time();
+	os_sprintf(response, "NTP request sent\r\n");
         goto command_handled;
     }
 #ifdef ALLOW_SLEEP
