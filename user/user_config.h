@@ -47,6 +47,11 @@ typedef enum {SIG_DO_NOTHING=0, SIG_START_SERVER=1, SIG_SEND_DATA, SIG_UART0, SI
 #define ACLS      1
 
 //
+// Define this if you want to have NTP support.
+//
+#define NTP	  1
+
+//
 // Define this if you want to have QoS for the SoftAP.
 //
 #define TOKENBUCKET      1

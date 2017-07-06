@@ -38,8 +38,12 @@ uint8_t mac[6];
     config->Vmin			= 0;
     config->Vmin_sleep			= 60;
 #endif
+#ifdef NTP
+    IP4_ADDR(&config->ntp_server, 140, 78, 2, 62);
+#endif
+#ifdef REMOTE_CONFIG
     config->config_port			= CONSOLE_SERVER_PORT;
-
+#endif
 #ifdef TOKENBUCKET
     config->kbps_ds			= 0;
     config->kbps_us			= 0;

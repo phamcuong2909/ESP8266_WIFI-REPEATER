@@ -51,6 +51,9 @@ typedef struct
     int32_t	Vmin;		// Min voltage of battery
     int32_t	Vmin_sleep;	// Sleep time in sec when battery is low
 #endif
+#ifdef NTP
+    ip_addr_t	ntp_server;	// Address of the used NTP server
+#endif
 #ifdef REMOTE_CONFIG
     uint16_t	config_port;	// Port on which the concole listenes (0 if no access)
 #endif

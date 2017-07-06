@@ -6,12 +6,10 @@
 #include <time.h>
 
 #include "ntp.h"
-//#include "user_main.h"
 #include "user_config.h"
 #include "driver/uart.h"
 
 // list of major public servers http://tf.nist.gov/tf-cgi/servers.cgi
-uint8 ntp_server[] = {134, 169, 9, 108};
 
 static os_timer_t ntp_timeout;
 static struct espconn *pCon = 0;
@@ -82,7 +80,7 @@ static void ICACHE_FLASH_ATTR ntp_udp_recv(void *arg, char *pdata, unsigned shor
 //	wifi_disconnect();
 }
 
-void ICACHE_FLASH_ATTR ntp_get_time() {
+void ICACHE_FLASH_ATTR ntp_get_time(ip_addr_t *ntp_server) {
 
 	ntp_t ntp;
 
@@ -93,11 +91,11 @@ void ICACHE_FLASH_ATTR ntp_get_time() {
 	pCon->proto.udp = (esp_udp*)os_zalloc(sizeof(esp_udp));
 	pCon->proto.udp->local_port = espconn_port();
 	pCon->proto.udp->remote_port = 123;
-	os_memcpy(pCon->proto.udp->remote_ip, ntp_server, 4);
+	os_memcpy(pCon->proto.udp->remote_ip, &(ntp_server->addr), 4);
 
 	// create a really simple ntp request packet
 	os_memset(&ntp, 0, sizeof(ntp_t));
-	ntp.options = 0b00100011; // leap = 0, version = 4, mode = 3 (client)
+	ntp.options = 0b00011011; // leap = 0, version = 3, mode = 3 (client)
 
 	// set timeout timer
 	os_timer_disarm(&ntp_timeout);

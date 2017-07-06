@@ -23,7 +23,9 @@
 
 #include "easygpio.h"
 
+#ifdef NTP
 #include "ntp.h"
+#endif
 
 #ifdef ACLS
 #include "acl.h"
@@ -681,12 +683,16 @@ void ICACHE_FLASH_ATTR console_handle_command(struct espconn *pespconn)
         ringbuf_memcpy_into(console_tx_buffer, response, os_strlen(response));
 #endif
 #ifdef REMOTE_MONITORING
-        os_sprintf(response, "|monitor [on|off] <portnumber>");
+        os_sprintf(response, "|monitor [on|off|acl] <portnumber>");
         ringbuf_memcpy_into(console_tx_buffer, response, os_strlen(response));
 #endif
 	ringbuf_memcpy_into(console_tx_buffer, "\r\n", 2);
 #ifdef TOKENBUCKET
         os_sprintf(response, "|set [upstream_kbps|downstream_kbps] <val>\r\n");
+        ringbuf_memcpy_into(console_tx_buffer, response, os_strlen(response));
+#endif
+#ifdef NTP
+        os_sprintf(response, "|set ntp_server <ip-addr>\r\n");
         ringbuf_memcpy_into(console_tx_buffer, response, os_strlen(response));
 #endif
 #ifdef ACLS
@@ -738,6 +744,10 @@ void ICACHE_FLASH_ATTR console_handle_command(struct espconn *pespconn)
 
         os_sprintf(response, "Clock speed: %d\r\n", config.clock_speed);
         ringbuf_memcpy_into(console_tx_buffer, response, os_strlen(response));
+#ifdef NTP
+        os_sprintf(response, "NTP server: %d.%d.%d.%d\r\n", IP2STR(&config.ntp_server));
+        ringbuf_memcpy_into(console_tx_buffer, response, os_strlen(response));      
+#endif
 #ifdef TOKENBUCKET
 	if (config.kbps_ds != 0) {
             os_sprintf(response, "Downstream limit: %d kbps\r\n", config.kbps_ds);
@@ -1052,12 +1062,14 @@ void ICACHE_FLASH_ATTR console_handle_command(struct espconn *pespconn)
         goto command_handled;
     }
 
+#ifdef NTP
     if (strcmp(tokens[0], "ntp") == 0)
     {
-	ntp_get_time();
+	ntp_get_time(&config.ntp_server);
 	os_sprintf(response, "NTP request sent\r\n");
         goto command_handled;
     }
+#endif
 #ifdef ALLOW_SLEEP
     if (strcmp(tokens[0], "sleep") == 0)
     {
@@ -1214,6 +1226,15 @@ void ICACHE_FLASH_ATTR console_handle_command(struct espconn *pespconn)
                 os_sprintf(response, "Hidden SSID set\r\n");
                 goto command_handled;
             }
+#ifdef NTP
+	    if (strcmp(tokens[1], "ntp_server") == 0)
+	    {
+		config.ntp_server.addr = ipaddr_addr(tokens[2]);
+		os_sprintf(response, "NTP server set to %d.%d.%d.%d\r\n", 
+			IP2STR(&config.ntp_server));
+                goto command_handled;
+            }
+#endif
 #ifdef ACLS
             if (strcmp(tokens[1],"acl_debug") == 0)
             {

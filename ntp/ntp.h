@@ -1,5 +1,6 @@
 #ifndef __NTP_H__
 #define __NTP_H__
+#include "lwip/ip.h"
 
 #define NTP_TIMEOUT_MS 5000
 
@@ -17,6 +18,6 @@ typedef struct {
 	uint8 trans_time[8];
 } ntp_t;
 
-void ICACHE_FLASH_ATTR ntp_get_time();
+void ICACHE_FLASH_ATTR ntp_get_time(ip_addr_t *ntp_server);
 
 #endif
