@@ -4,15 +4,32 @@
 #include <osapi.h>
 #include <mem.h>
 #include <time.h>
+#include <sys/time.h>
 
 #include "ntp.h"
 #include "user_config.h"
 #include "driver/uart.h"
 
-// list of major public servers http://tf.nist.gov/tf-cgi/servers.cgi
+#define OFFSET 2208988800ULL
 
 static os_timer_t ntp_timeout;
 static struct espconn *pCon = 0;
+
+
+void ICACHE_FLASH_ATTR ntp_to_tv(uint8_t ntp[8], struct timeval *tv)
+{
+uint64_t aux = 0;
+
+	tv->tv_sec = ntohl(*(uint32_t*)ntp) - OFFSET;
+
+	aux = ntohl(*(uint32_t*)&ntp[4]);
+
+	// aux is the NTP fraction (0..2^32-1)
+	aux *= 1000000; // multiply by 1e6 
+	aux >>= 32;     // and divide by 2^32
+	tv->tv_usec = (uint32_t)aux;
+}
+
 
 static void ICACHE_FLASH_ATTR ntp_udp_timeout(void *arg) {
 	
@@ -28,44 +45,19 @@ static void ICACHE_FLASH_ATTR ntp_udp_timeout(void *arg) {
 	}
 }
 
-static uint8 ICACHE_FLASH_ATTR calc_checksum(char *pdata, unsigned short len) {
-	uint8 checksum = 0;
-	int i;
-	
-	for (i = 0; i < len; i++) {
-		checksum ^= pdata[i];
-	}
-	return checksum;
-}
 
 static void ICACHE_FLASH_ATTR ntp_udp_recv(void *arg, char *pdata, unsigned short len) {
-
-	struct tm *dt;
-	time_t timestamp;
 	ntp_t *ntp;
-	uint8 checksum;
+	struct timeval tv;
 
 	os_timer_disarm(&ntp_timeout);
 
 	// extract ntp time
 	ntp = (ntp_t*)pdata;
-	timestamp = ntp->trans_time[0] << 24 | ntp->trans_time[1] << 16 |ntp->trans_time[2] << 8 | ntp->trans_time[3];
-	// convert to unix time
-	timestamp -= 2208988800UL;
-	// create tm struct
-	dt = gmtime(&timestamp);
 
-	// do something with it, like setting an rtc
-	//ds1307_setTime(dt);
-	// or just print it out
-	char gps_raw_data[31];
-	char gps_formatted_data[37];
-	os_sprintf(gps_raw_data, "GPRMC,%02d%02d%02d,A,,,,,,,%02d%02d%02d,,\0", dt->tm_hour, dt->tm_min, dt->tm_sec,
-			dt->tm_mday, dt->tm_mon+1, dt->tm_year-100); //unix time starts in 1900
-	checksum = calc_checksum(gps_raw_data, os_strlen(gps_raw_data));
-	ets_uart_printf("\r\n\r\n$%s*%02x\r\n\r\n", gps_raw_data, checksum);
-	//os_sprintf(gps_formatted_data, "$%s*%02x\r\n", gps_raw_data, checksum);
-	//uart1_write_str(gps_formatted_data);
+	ntp_to_tv(ntp->trans_time, &tv);
+
+	os_printf("s: %d, us: %d\r\n", tv.tv_sec, tv.tv_usec);
 
 	// clean up connection
 	if (pCon) {
@@ -74,10 +66,6 @@ static void ICACHE_FLASH_ATTR ntp_udp_recv(void *arg, char *pdata, unsigned shor
 		os_free(pCon);
 		pCon = 0;
 	}
-#ifdef PLATFORM_DEBUG
-	ets_uart_printf("WiFi will now be disconnected\r\n");
-#endif
-//	wifi_disconnect();
 }
 
 void ICACHE_FLASH_ATTR ntp_get_time(ip_addr_t *ntp_server) {

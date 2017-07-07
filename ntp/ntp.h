@@ -18,6 +18,7 @@ typedef struct {
 	uint8 trans_time[8];
 } ntp_t;
 
-void ICACHE_FLASH_ATTR ntp_get_time(ip_addr_t *ntp_server);
+void ntp_get_time(ip_addr_t *ntp_server);
+void ntp_to_tv(uint8_t ntp[8], struct timeval *tv);
 
 #endif
