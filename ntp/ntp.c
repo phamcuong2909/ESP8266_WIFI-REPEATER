@@ -4,16 +4,26 @@
 #include <osapi.h>
 #include <mem.h>
 #include <time.h>
-#include <sys/time.h>
 
 #include "ntp.h"
 #include "user_config.h"
 #include "driver/uart.h"
+#include "sys_time.h"
 
 #define OFFSET 2208988800ULL
 
 static os_timer_t ntp_timeout;
 static struct espconn *pCon = 0;
+
+static struct timeval t_tv = {0,0};
+static uint64_t t_offset = 0;
+
+void ICACHE_FLASH_ATTR get_cur_time(struct timeval *tv)
+{
+	uint64_t t_curr = get_long_systime() - t_offset + t_tv.tv_usec;
+	tv->tv_sec = t_tv.tv_sec + t_curr/1000000;
+	tv->tv_usec = t_curr%1000000; 
+}
 
 
 void ICACHE_FLASH_ATTR ntp_to_tv(uint8_t ntp[8], struct timeval *tv)
@@ -48,16 +58,21 @@ static void ICACHE_FLASH_ATTR ntp_udp_timeout(void *arg) {
 
 static void ICACHE_FLASH_ATTR ntp_udp_recv(void *arg, char *pdata, unsigned short len) {
 	ntp_t *ntp;
-	struct timeval tv;
+struct timeval tv;
+get_cur_time(&tv);
+os_printf("s: %d, us: %d\r\n", tv.tv_sec, tv.tv_usec);
+
+	// get the according sys_time;
+	t_offset = get_long_systime();
 
 	os_timer_disarm(&ntp_timeout);
 
 	// extract ntp time
 	ntp = (ntp_t*)pdata;
 
-	ntp_to_tv(ntp->trans_time, &tv);
+	ntp_to_tv(ntp->trans_time, &t_tv);
 
-	os_printf("s: %d, us: %d\r\n", tv.tv_sec, tv.tv_usec);
+	os_printf("s: %d, us: %d\r\n", t_tv.tv_sec, t_tv.tv_usec);
 
 	// clean up connection
 	if (pCon) {
@@ -68,9 +83,12 @@ static void ICACHE_FLASH_ATTR ntp_udp_recv(void *arg, char *pdata, unsigned shor
 	}
 }
 
-void ICACHE_FLASH_ATTR ntp_get_time(ip_addr_t *ntp_server) {
+void ICACHE_FLASH_ATTR ntp_get_time(ip_addr_t *ntp_server, uint32_t min_sync_freq) {
 
 	ntp_t ntp;
+
+	if (ntp_server->addr == 0 || (t_offset != 0 && get_long_systime() - t_offset < min_sync_freq))
+	   return; // recently updated
 
 	// set up the udp "connection"
 	pCon = (struct espconn*)os_zalloc(sizeof(struct espconn));

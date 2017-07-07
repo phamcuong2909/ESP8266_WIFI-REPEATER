@@ -53,6 +53,7 @@ typedef struct
 #endif
 #ifdef NTP
     ip_addr_t	ntp_server;	// Address of the used NTP server
+    uint32_t	ntp_interval;	// Sync interval in usec
 #endif
 #ifdef REMOTE_CONFIG
     uint16_t	config_port;	// Port on which the concole listenes (0 if no access)

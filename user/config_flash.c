@@ -40,6 +40,7 @@ uint8_t mac[6];
 #endif
 #ifdef NTP
     IP4_ADDR(&config->ntp_server, 140, 78, 2, 62);
+    config->ntp_interval		= 60000000;
 #endif
 #ifdef REMOTE_CONFIG
     config->config_port			= CONSOLE_SERVER_PORT;

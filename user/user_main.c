@@ -294,7 +294,6 @@ static void ICACHE_FLASH_ATTR stop_monitor(void)
 
 int ICACHE_FLASH_ATTR put_packet_to_ringbuf(struct pbuf *p) {
   struct pcap_pkthdr pcap_phdr;
-  uint64_t t_usecs;
   uint32_t len = p->len;
 
 #ifdef MONITOR_BUFFER_TIGHT
@@ -307,10 +306,12 @@ int ICACHE_FLASH_ATTR put_packet_to_ringbuf(struct pbuf *p) {
 #endif
 
     if (ringbuf_bytes_free(pcap_buffer) >= sizeof(pcap_phdr)+len) {
+       struct timeval tv;
+
        //os_printf("Put %d Bytes into RingBuff\r\n", sizeof(pcap_phdr)+p->len);
-       t_usecs = get_long_systime();
-       pcap_phdr.ts_sec = (uint32_t)t_usecs/1000000;
-       pcap_phdr.ts_usec = (uint32_t)t_usecs%1000000;
+       get_cur_time(&tv);
+       pcap_phdr.ts_sec = tv.tv_sec;
+       pcap_phdr.ts_usec = tv.tv_usec;
        pcap_phdr.caplen = len;
        pcap_phdr.len = p->tot_len;
        ringbuf_memcpy_into(pcap_buffer, (uint8_t*)&pcap_phdr, sizeof(pcap_phdr));
@@ -692,7 +693,7 @@ void ICACHE_FLASH_ATTR console_handle_command(struct espconn *pespconn)
         ringbuf_memcpy_into(console_tx_buffer, response, os_strlen(response));
 #endif
 #ifdef NTP
-        os_sprintf(response, "|set ntp_server <ip-addr>\r\n");
+        os_sprintf(response, "|set ntp_server <ip-addr>|set ntp_interval <secs>\r\n");
         ringbuf_memcpy_into(console_tx_buffer, response, os_strlen(response));
 #endif
 #ifdef ACLS
@@ -745,8 +746,10 @@ void ICACHE_FLASH_ATTR console_handle_command(struct espconn *pespconn)
         os_sprintf(response, "Clock speed: %d\r\n", config.clock_speed);
         ringbuf_memcpy_into(console_tx_buffer, response, os_strlen(response));
 #ifdef NTP
-        os_sprintf(response, "NTP server: %d.%d.%d.%d\r\n", IP2STR(&config.ntp_server));
-        ringbuf_memcpy_into(console_tx_buffer, response, os_strlen(response));      
+	if (config.ntp_server.addr != 0) {
+	    os_sprintf(response, "NTP server: %d.%d.%d.%d (interval: %d s)\r\n", IP2STR(&config.ntp_server), config.ntp_interval/1000000);
+	    ringbuf_memcpy_into(console_tx_buffer, response, os_strlen(response));
+	}     
 #endif
 #ifdef TOKENBUCKET
 	if (config.kbps_ds != 0) {
@@ -1061,15 +1064,6 @@ void ICACHE_FLASH_ATTR console_handle_command(struct espconn *pespconn)
 	os_sprintf(response, "Quitting console\r\n");
         goto command_handled;
     }
-
-#ifdef NTP
-    if (strcmp(tokens[0], "ntp") == 0)
-    {
-	ntp_get_time(&config.ntp_server);
-	os_sprintf(response, "NTP request sent\r\n");
-        goto command_handled;
-    }
-#endif
 #ifdef ALLOW_SLEEP
     if (strcmp(tokens[0], "sleep") == 0)
     {
@@ -1232,6 +1226,13 @@ void ICACHE_FLASH_ATTR console_handle_command(struct espconn *pespconn)
 		config.ntp_server.addr = ipaddr_addr(tokens[2]);
 		os_sprintf(response, "NTP server set to %d.%d.%d.%d\r\n", 
 			IP2STR(&config.ntp_server));
+                goto command_handled;
+            }
+
+	    if (strcmp(tokens[1], "ntp_interval") == 0)
+	    {
+		config.ntp_interval = atoi(tokens[2])*1000000;
+		os_sprintf(response, "NTP interval set to %d s\r\n", atoi(tokens[2]));
                 goto command_handled;
             }
 #endif
@@ -1594,6 +1595,9 @@ uint32_t Bps;
     }
 
     t_new = get_long_systime();
+#ifdef NTP
+    ntp_get_time(&config.ntp_server, config.ntp_interval);
+#endif
 
 #ifdef TOKENBUCKET
     t_diff = (uint32_t)((t_new-t_old_tb)/1000);
