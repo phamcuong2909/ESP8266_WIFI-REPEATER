@@ -23,10 +23,6 @@
 
 #include "easygpio.h"
 
-#ifdef NTP
-#include "ntp.h"
-#endif
-
 #ifdef ACLS
 #include "acl.h"
 #endif
@@ -37,6 +33,11 @@
 
 #ifdef MQTT_CLIENT
 #include "mqtt.h"
+#endif
+
+#ifdef NTP
+#include "ntp.h"
+uint64_t t_ntp_resync = 0;
 #endif
 
 uint32_t readvdd33(void);
@@ -693,7 +694,7 @@ void ICACHE_FLASH_ATTR console_handle_command(struct espconn *pespconn)
         ringbuf_memcpy_into(console_tx_buffer, response, os_strlen(response));
 #endif
 #ifdef NTP
-        os_sprintf(response, "|set ntp_server <ip-addr>|set ntp_interval <secs>\r\n");
+        os_sprintf(response, "|time|set ntp_server <ntp_host>|set ntp_interval <secs>|set <ntp_timezone> <hours>\r\n");
         ringbuf_memcpy_into(console_tx_buffer, response, os_strlen(response));
 #endif
 #ifdef ACLS
@@ -746,8 +747,9 @@ void ICACHE_FLASH_ATTR console_handle_command(struct espconn *pespconn)
         os_sprintf(response, "Clock speed: %d\r\n", config.clock_speed);
         ringbuf_memcpy_into(console_tx_buffer, response, os_strlen(response));
 #ifdef NTP
-	if (config.ntp_server.addr != 0) {
-	    os_sprintf(response, "NTP server: %d.%d.%d.%d (interval: %d s)\r\n", IP2STR(&config.ntp_server), config.ntp_interval/1000000);
+	if (os_strcmp(config.ntp_server, "none") != 0) {
+	    os_sprintf(response, "NTP server: %s (interval: %d s, tz: %d)\r\n",
+		config.ntp_server, config.ntp_interval/1000000, config.ntp_timezone);
 	    ringbuf_memcpy_into(console_tx_buffer, response, os_strlen(response));
 	}     
 #endif
@@ -1043,6 +1045,13 @@ void ICACHE_FLASH_ATTR console_handle_command(struct espconn *pespconn)
         goto command_handled;
     }
 #endif
+#ifdef NTP
+    if (strcmp(tokens[0], "time") == 0)
+    {
+        os_sprintf(response, "%s\r\n", get_timestr(config.ntp_timezone));
+        goto command_handled;
+    }
+#endif
     if (strcmp(tokens[0], "reset") == 0)
     {
 	if (nTokens == 2 && strcmp(tokens[1], "factory") == 0) {
@@ -1223,9 +1232,10 @@ void ICACHE_FLASH_ATTR console_handle_command(struct espconn *pespconn)
 #ifdef NTP
 	    if (strcmp(tokens[1], "ntp_server") == 0)
 	    {
-		config.ntp_server.addr = ipaddr_addr(tokens[2]);
-		os_sprintf(response, "NTP server set to %d.%d.%d.%d\r\n", 
-			IP2STR(&config.ntp_server));
+		os_strncpy(config.ntp_server, tokens[2], 32);
+		config.ntp_server[31] = 0;
+		ntp_set_server(config.ntp_server);
+		os_sprintf(response, "NTP server set to %s\r\n", config.ntp_server);
                 goto command_handled;
             }
 
@@ -1233,6 +1243,13 @@ void ICACHE_FLASH_ATTR console_handle_command(struct espconn *pespconn)
 	    {
 		config.ntp_interval = atoi(tokens[2])*1000000;
 		os_sprintf(response, "NTP interval set to %d s\r\n", atoi(tokens[2]));
+                goto command_handled;
+            }
+
+	    if (strcmp(tokens[1], "ntp_timezone") == 0)
+	    {
+		config.ntp_timezone = atoi(tokens[2]);
+		os_sprintf(response, "NTP timezone set to %d h\r\n", config.ntp_timezone);
                 goto command_handled;
             }
 #endif
@@ -1596,7 +1613,10 @@ uint32_t Bps;
 
     t_new = get_long_systime();
 #ifdef NTP
-    ntp_get_time(&config.ntp_server, config.ntp_interval);
+    if (t_new - t_ntp_resync > config.ntp_interval) {
+        ntp_get_time();
+	t_ntp_resync = t_new;
+    }
 #endif
 
 #ifdef TOKENBUCKET
@@ -1618,6 +1638,9 @@ uint32_t Bps;
     t_diff = (uint32_t)((t_new-t_old)/1000000);
     if (mqtt_enabled && config.mqtt_interval != 0 && (t_diff > config.mqtt_interval)) {
 	mqtt_publish_int(MQTT_TOPIC_UPTIME, "Uptime", "%d", (uint32_t)(t_new/1000000));
+#ifdef NTP
+	mqtt_publish_str(MQTT_TOPIC_UPTIME, "Time", get_timestr(config.ntp_timezone));
+#endif
 	mqtt_publish_int(MQTT_TOPIC_VDD, "Vdd", "%d", Vdd);
 	mqtt_publish_int(MQTT_TOPIC_BYTES, "Bin", "%d", (uint32_t)(Bytes_in/1024));
 	mqtt_publish_int(MQTT_TOPIC_BYTES, "Bout", "%d", (uint32_t)(Bytes_out/1024));
@@ -1736,6 +1759,11 @@ void wifi_handle_event_cb(System_Event_t *evt)
 #ifdef MQTT_CLIENT
 	if (mqtt_enabled) MQTT_Connect(&mqttClient);
 #endif /* MQTT_CLIENT */
+
+#ifdef NTP
+	if (os_strcmp(config.ntp_server, "none") != 0)
+	    ntp_set_server(config.ntp_server);
+#endif
 
         // Post a Server Start message as the IP has been acquired to Task with priority 0
 	system_os_post(user_procTaskPrio, SIG_START_SERVER, 0 );

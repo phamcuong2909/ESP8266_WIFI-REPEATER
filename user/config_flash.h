@@ -52,8 +52,9 @@ typedef struct
     int32_t	Vmin_sleep;	// Sleep time in sec when battery is low
 #endif
 #ifdef NTP
-    ip_addr_t	ntp_server;	// Address of the used NTP server
+    uint8_t	ntp_server[32];	// IP or hostname of the MQTT broker, "none" if empty
     uint32_t	ntp_interval;	// Sync interval in usec
+    int16_t	ntp_timezone;	// Timezone (hour offset to GMT)
 #endif
 #ifdef REMOTE_CONFIG
     uint16_t	config_port;	// Port on which the concole listenes (0 if no access)

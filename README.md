@@ -75,6 +75,10 @@ Advanced commands:
 - set ap_open [0|1]: selects, whether the soft-AP uses WPA2 security (ap_open=0,  automatic, if an ap_password is set) or open (ap_open=1)
 - set ssid_hidden [0|1]: selects, whether the SSID of the soft-AP is hidden (ssid_hidden=1) or visible (ssid_hidden=0, default)
 - set speed [80|160]: sets the CPU clock frequency (default 80 Mhz)
+- set ntp_server _IP_or_hostname_: sets the name or IP of an NTP server ("none" disables NTP, default)
+- set ntp_interval _interval_: sets the NTP sync interval in seconds (default 60)
+- set ntp_timezone _tz_: sets the timezone in hours offset
+- time: prints the current time
 - set [upstream_kbps|downstream_kbps] _bitrate_: sets a maximum upstream/downstream bitrate (0 = no limit) 
 - set vmin _voltage_: sets the minimum battery voltage in mV. If Vdd drops below, the ESP goes into deep sleep. If 0, nothing happens
 - set vmin_sleep _time_: sets the time interval in seconds the ESP sleeps on low voltage
@@ -141,10 +145,13 @@ will allow all packets and also select all packets for monitoring that go from a
 # Bitrate Limits
 By setting upstream_kbps and downstream_kbps to a value != 0 (0 is the default), you can limit the maximum bitrate of the ESP's AP. This value is a limit that applies to the traffic of all connected clients. Packets that would exeed the defined bitrate are dropped. The traffic shaper uses the "Token Bucket" algorithm with a bucket size of currently four times the bitrate per seconds, allowing for bursts, when there was no traffic before.
 
+# NTP Support
+Remote NTP time servers are supported. By default the NTP client is disabled - and the is no immediate need for synced time. Nowever, it can be enabled by setting the config parameter "ntp_server" to a hostname or IP different from "none". Also you can set the "ntp_timezone" to an offset from GMT. The system time will be synced with the NTP server every "ntp_interval" seconds. Here it uses NOT the full NTP calculation and clock driff compensation. Instead it will just set the local time to the latest received time. The NTP time will be used in pcap traces and it will be published via MQTT (see below). Also you can query the NTP time with the "time" command from the commandline.
+
 # MQTT Support
 Since version 1.3 the router has a build-in MQTT client (thanks to Tuan PM for his library https://github.com/tuanpmt/esp_mqtt). This can help to integrate the router/repeater into the IoT. A home automation system can e.g. make decisions based on infos about the currently associated stations, it can switch on and of the repeaters (e.g. based on a time schedule), or it can simply be used to monitor the load. The router can be connected either to a local MQTT broker or to a publically available broker in the cloud. However, currently it does not support TLS encryption.
 
-By default the MQTT client is disabled. It can be enabled by setting the config parameter "mqtt_host" to a hostname different from "none". To configure MQTT you can set the following parameters:
+By default the MQTT client is disabled. It can be enabled by setting the config parameter "mqtt_host" to a hostname or IP different from "none". To configure MQTT you can set the following parameters:
 - set mqtt_host _IP_or_hostname_: IP or hostname of the MQTT broker ("none" disables the MQTT client)
 - set mqtt_user _username_: Username for authentication ("none" if no authentication is required at the broker)
 - set mqtt_user _password_: Password for authentication
@@ -158,6 +165,7 @@ The MQTT parameters can be displayed with the "show mqtt" command.
 
 The router can publish the following status topics periodically (every mqtt_interval):
 - _prefix_path_/Uptime: System uptime since last reset in s (mask: 0x0020)
+- _prefix_path_/Time: Current time as "hh:mm:ss" from NTP (if enabled) (mask: 0x0020)
 - _prefix_path_/Vdd: Voltage of the power supply in mV (mask: 0x0040)
 - _prefix_path_/Bpsin: Bytes/s from stations into the AP (mask: 0x0800)
 - _prefix_path_/Bpsout: Bytes/s from the AP to stations (mask: 0x1000)

@@ -39,8 +39,9 @@ uint8_t mac[6];
     config->Vmin_sleep			= 60;
 #endif
 #ifdef NTP
-    IP4_ADDR(&config->ntp_server, 140, 78, 2, 62);
+    os_sprintf(config->ntp_server,"%s", "none");
     config->ntp_interval		= 60000000;
+    config->ntp_timezone		= 0;
 #endif
 #ifdef REMOTE_CONFIG
     config->config_port			= CONSOLE_SERVER_PORT;
