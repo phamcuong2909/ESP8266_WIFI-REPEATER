@@ -28,7 +28,7 @@ void ICACHE_FLASH_ATTR get_cur_time(struct timeval *tv)
 }
 
 
-uint8_t* ICACHE_FLASH_ATTR get_timestr(uint16_t timezone)
+uint8_t* ICACHE_FLASH_ATTR get_timestr(int16_t timezone)
 {
 	struct timeval tv;
 	static uint8_t buf[10];

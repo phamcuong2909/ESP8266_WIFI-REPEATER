@@ -22,6 +22,6 @@ typedef struct {
 void ntp_set_server(uint8_t *ntp_server);
 void ntp_get_time();
 void get_cur_time(struct timeval *tv);
-uint8_t *get_timestr(uint16_t timezone);
+uint8_t *get_timestr(int16_t timezone);
 
 #endif
